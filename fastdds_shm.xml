@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+    FastDDS shared memory transport profile.
+    Used when ROS and Unity run on the same machine - eliminates loopback TCP
+    between realsense2_camera and the TCP endpoint, replacing it with a direct
+    shared memory ring buffer (zero kernel TCP stack, ~0.1ms vs ~3ms).
+
+    segment_size: 64MB - enough for several 480x270 Z16 depth frames simultaneously.
+    port_queue_capacity: 512 - number of message slots per topic ring buffer;
+        at 90fps depth (~253KB) this provides ~5 seconds of capacity before overwrite.
+
+    To activate, set in your shell or launch file:
+        export FASTRTPS_DEFAULT_PROFILES_FILE=/path/to/fastdds_shm.xml
+        export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+-->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+
+    <transport_descriptors>
+        <transport_descriptor>
+            <transport_id>ShmTransport</transport_id>
+            <type>SHM</type>
+            <!-- 64MB shared segment - adjust if you add more camera streams -->
+            <segment_size>67108864</segment_size>
+            <!-- 512 slots per ring buffer; dropped frames do not block the writer -->
+            <port_queue_capacity>512</port_queue_capacity>
+            <!-- Mark a port dead after 500ms with no heartbeat -->
+            <healthy_check_timeout_ms>500</healthy_check_timeout_ms>
+        </transport_descriptor>
+
+        <!-- Keep UDPv4 as fallback for any cross-machine communication
+             (joint command topics sent to real robot controller, etc.) -->
+        <transport_descriptor>
+            <transport_id>UdpTransport</transport_id>
+            <type>UDPv4</type>
+        </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="default_profile" is_default_profile="true">
+        <rtps>
+            <userTransports>
+                <!-- SHM first: used for local topics (camera, point cloud) -->
+                <transport_id>ShmTransport</transport_id>
+                <!-- UDP fallback: used for topics crossing machine boundaries -->
+                <transport_id>UdpTransport</transport_id>
+            </userTransports>
+            <!-- Disable built-in transports so we control exactly what is used -->
+            <useBuiltinTransports>false</useBuiltinTransports>
+        </rtps>
+    </participant>
+
+</profiles>
