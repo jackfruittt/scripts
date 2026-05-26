@@ -1,28 +1,41 @@
 #!/bin/bash
 # Record hand-eye calibration bag from Unity publishers.
-# Usage:  ./record_handeye.sh <bag_name>
-# Example: ./record_handeye.sh handeye_bag_01
+# Each call captures one static robot pose for DURATION seconds.
+# Bags are saved to ~/Software/calibration_camera/ on the host
+# (mounted as /root/Software/calibration_camera/ inside the container).
+#
+# Usage:  ./record_handeye.sh [duration_seconds]
+# Example: ./record_handeye.sh        # 5s default, auto-names handeye_bag_01, _02, ...
+#          ./record_handeye.sh 8      # 8s capture
 #
 # Topics recorded:
 #   /unity/tool0_pose    - T_base_tool0 from RobotFKSolver (FLU)
 #   /unity/apriltag_pose - T_cam_tag from Detection (FLU, gated on detection)
-#
-# Press Ctrl+C to stop recording.
 
-BAG_NAME="${1:-handeye_bag}"
+DURATION="${1:-5}"
+CONTAINER="r2_humble_dev"
+HOST_OUT_DIR="$HOME/Software/calibration_camera"
+CONTAINER_OUT_DIR="/root/Software/calibration_camera"
 
-if [[ -d "$BAG_NAME" ]]; then
-    echo "[record_handeye] '$BAG_NAME' already exists. Choose a different name or delete it first."
-    exit 1
-fi
+mkdir -p "$HOST_OUT_DIR"
 
-echo "[record_handeye] Recording to '$BAG_NAME' ..."
-echo "[record_handeye] Move the robot to 15-20 diverse poses, then Ctrl+C to stop."
-echo ""
+# Auto-increment bag number
+INDEX=1
+while [[ -d "${HOST_OUT_DIR}/handeye_bag_$(printf '%02d' $INDEX)" ]]; do
+    INDEX=$((INDEX + 1))
+done
+BAG_NAME="handeye_bag_$(printf '%02d' $INDEX)"
+HOST_BAG_PATH="${HOST_OUT_DIR}/${BAG_NAME}"
+CONTAINER_BAG_PATH="${CONTAINER_OUT_DIR}/${BAG_NAME}"
 
-source /root/rs2_ws/install/setup.bash
+echo "[record_handeye] Pose ${INDEX}: recording '${BAG_NAME}' for ${DURATION}s ..."
 
-ros2 bag record \
-    /unity/tool0_pose \
-    /unity/apriltag_pose \
-    -o "$BAG_NAME"
+docker exec "$CONTAINER" bash -c "
+    source /opt/ros/humble/setup.bash
+    timeout ${DURATION} ros2 bag record \
+        /unity/tool0_pose \
+        /unity/apriltag_pose \
+        -o ${CONTAINER_BAG_PATH}
+"
+
+echo "[record_handeye] Done. Bag saved to ${HOST_BAG_PATH}"
